@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 个人知识库</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            background-color: #f4f7f6;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .chat-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            background-color: #fff;
+            color: #333;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            max-width: 80%;
+            clear: both;
+        }
+
+        .user-message {
+            background-color: #dcf8c6;
+            align-self: flex-end;
+        }
+
+        .ai-message {
+            background-color: #e0f7fa;
+            align-self: flex-start;
+        }
+
+        .input-area {
+            padding: 15px;
+            background-color: #eee;
+            border-top: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-field-wrapper {
+            flex-grow: 1;
+            position: relative; /* 设置为相对定位，作为清除按钮的容器 */
+            margin-right: 10px;
+        }
+
+        .input-field {
+            display: block; /* 使输入框占据容器的全部宽度 */
+            width: 100%;
+            border: none;
+            padding: 10px 30px 10px 10px; /* 右侧留出空间给清除按钮 */
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box; /* 确保 padding 不会增加元素的总宽度 */
+            resize: none; /* 禁止用户调整大小 */
+            overflow-y: auto; /* 允许内容超出时垂直滚动 */
+            min-height: 40px; /* 设置最小高度以容纳一行文本 */
+        }
+
+        .clear-button {
+            position: absolute; /* 相对于 .input-field-wrapper 定位 */
+            top: 50%;
+            right: 8px;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 1em;
+            outline: none;
+            display: none; /* 初始状态隐藏 */
+        }
+
+        .clear-button:hover {
+            color: #333;
+        }
+
+        .send-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .send-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 滚动条美化 (可选) */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background-color: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: #888;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #555;
+        }
+
+        .loading-message {
+            background-color: #f0f0f0;
+            color: #777;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            align-self: flex-start;
+            max-width: 80%;
+            clear: both;
+            display: flex;
+            align-items: center;
+        }
+
+        .loading-icon {
+            border: 3px solid #ccc;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container" id="chatContainer">
+        <div class="message ai-message">
+            你好！有什么我可以帮到你？
+        </div>
+        <!-- <div class="message user-message">
+            你好！我想了解一下今天的天气。
+        </div> -->
+    </div>
+    <div class="input-area">
+        <div class="input-field-wrapper">
+            <textarea class="input-field" placeholder="输入你的消息..."></textarea>
+            <button class="clear-button">×</button>
+        </div>
+        <button class="send-button">发送</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        const chatContainer = document.getElementById('chatContainer');
+        const inputField = document.querySelector('.input-field');
+        const sendButton = document.querySelector('.send-button');
+        const clearButton = document.querySelector('.clear-button');
+        let loadingMessageDiv = null; // 用于存储“正在回复中...”的消息元素
+
+        sendButton.addEventListener('click', sendMessage);
+        inputField.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+                event.preventDefault(); // 阻止默认的回车换行行为
+            }
+        });
+        clearButton.addEventListener('click', clearInputField);
+        inputField.addEventListener('input', toggleClearButtonVisibility);
+
+        // 初始状态隐藏清除按钮
+        clearButton.style.display = 'none';
+
+        async function sendMessage() {
+            const messageText = inputField.value.trim();
+            if (messageText) {
+                addUserMessage(messageText);
+                inputField.value = '';
+                sendButton.disabled = true;
+                toggleClearButtonVisibility(); // 清空后隐藏清除按钮
+
+
+                // 显示“正在回复中...”的消息和加载图标
+                loadingMessageDiv = document.createElement('div');
+                loadingMessageDiv.classList.add('loading-message');
+                loadingMessageDiv.innerHTML = '<div class="loading-icon"></div> 正在回复中...';
+                chatContainer.appendChild(loadingMessageDiv);
+                scrollToBottom();
+
+                // 模拟AI回复
+                try {
+                    const response = await fetch('/chat/send_message', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `message=${encodeURIComponent(messageText)}`,
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.info("response data", data)
+
+                        // 移除“正在回复中...”的消息
+                        if (loadingMessageDiv) {
+                            chatContainer.removeChild(loadingMessageDiv);
+                            loadingMessageDiv = null;
+                        }
+
+                        addAiMessage(data.reply.result);
+                    } else {
+                        // 移除“正在回复中...”的消息
+                        if (loadingMessageDiv) {
+                            chatContainer.removeChild(loadingMessageDiv);
+                            loadingMessageDiv = null;
+                        }
+                        
+                        addAiMessage('Error: 无法获取 AI 回复。');
+                    }
+                } catch (error) {
+                    console.error('发送消息时发生错误:', error);
+
+                    // 移除“正在回复中...”的消息
+                    if (loadingMessageDiv) {
+                        chatContainer.removeChild(loadingMessageDiv);
+                        loadingMessageDiv = null;
+                    }
+
+                    addAiMessage('Error: 通信失败。');
+                } finally {
+                    sendButton.disabled = false;
+                }
+            }
+        }
+
+        function addUserMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'user-message');
+            messageDiv.textContent = text;
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addAiMessage(responseText) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai-message');
+
+
+            // 简单的 Markdown 语法检查
+            const isLikelyMarkdown = /[#*_>\[\]-]/.test(responseText);
+
+            if (isLikelyMarkdown) {
+                messageDiv.innerHTML = marked.parse(responseText);
+            } else {
+                messageDiv.textContent = responseText;
+            }
+
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function clearInputField() {
+            inputField.value = '';
+            toggleClearButtonVisibility(); // 清空后隐藏清除按钮
+        }
+
+        function toggleClearButtonVisibility() {
+            if (inputField.value.trim() !== '') {
+                clearButton.style.display = 'block';
+            } else {
+                clearButton.style.display = 'none';
+            }
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
